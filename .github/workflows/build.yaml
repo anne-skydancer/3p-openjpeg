@@ -39,7 +39,7 @@ jobs:
           python -m pip install autobuild==3.9.3
           if [[ "$RUNNER_OS" == Linux ]]; then
             sudo apt-get update
-            sudo apt-get install -y ninja-build libpng-dev libtiff-dev
+            sudo apt-get install -y ninja-build libpng-dev libtiff-dev libwebp-dev
           fi
       - name: Build
         run: autobuild build -A 64 -c Release --no-configure --id "$GITHUB_RUN_ID"
