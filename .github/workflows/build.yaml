@@ -1,38 +1,61 @@
 name: Build
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
-    tags: v*
+permissions:
+  contents: read
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-2022, macos-15, ubuntu-22.04]
-        addrsize: ["64"]
-        include:
-          - os: windows-2022
-            addrsize: "32"
+        os: [windows-2022, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      AUTOBUILD: autobuild
+      AUTOBUILD_ADDRSIZE: '64'
+      AUTOBUILD_BUILD_ID: ${{ github.run_id }}
+      AUTOBUILD_VARIABLES_FILE: ${{ github.workspace }}/.build-variables/variables
+      AUTOBUILD_VSVER: '170'
+      MSYS2_ARG_CONV_EXCL: '*'
     steps:
-      - name: Setup Homebrew Packages
-        if: ${{ runner.os == 'macOS' }}
-        shell: bash
-        run: brew install ninja
-      - name: Setup Linux Build Dependencies
-        if: ${{ runner.os == 'Linux' }}
-        shell: bash
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v7
+        with:
+          repository: secondlife/build-variables
+          path: .build-variables
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get -y install ninja-build libwebp-dev
-      - uses: secondlife/action-autobuild@v5
+          python -m pip install autobuild==3.9.3
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ninja-build libpng-dev libtiff-dev
+          fi
+      - name: Build
+        run: autobuild build -A 64 -c Release --no-configure --id "$GITHUB_RUN_ID"
+      - name: Verify automatic CPU fallback and codec roundtrip
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            python verify_package.py openjpeg/bin/Release
+          else
+            python verify_package.py openjpeg/build/bin
+          fi
+      - name: Package
+        run: autobuild package -A 64 --archive-format tzst --results-file autobuild-results.json
+      - uses: actions/upload-artifact@v7
         with:
-          addrsize: ${{ matrix.addrsize }}
-  release:
-    needs: build
-    runs-on: [ubuntu-latest]
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - uses: secondlife/action-autobuild-release@v3
-        with:
-          public: true
+          name: openjpeg-${{ runner.os }}-64
+          path: |
+            *.tar.zst
+            autobuild-results.json
+            stage/SOURCE_REVISION.txt
