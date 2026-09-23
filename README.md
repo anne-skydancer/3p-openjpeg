@@ -1,53 +1,22 @@
 # 3p-openjpeg
 
-This repository contains an autobuild-vendored version of [OpenJPEG](https://www.openjpeg.org/) used by Second Life.
+Autobuild packaging for VulkanStorm's [OpenJPEG fork](https://github.com/anne-skydancer/openjpeg), based on Second Life's package recipe.
 
-## Overview
+The source submodule pins the merged decoder and encoder acceleration work. Windows x64 ships `openjp2.dll` and its import library; Linux x64 ships `libopenjp2.a`. The package remains named `openjpeg`.
 
-OpenJPEG is an open-source JPEG 2000 codec written in C language. This repository packages it for use with Second Life's [autobuild](https://github.com/secondlife/autobuild) system.
+OpenCL acceleration is enabled automatically on capable GPU devices, irrespective of vendor. The driver is loaded dynamically; absent or unsuitable OpenCL devices fall back to native CPU OpenJPEG. No OpenCL SDK or activation environment variable is needed on the user's machine. GPU execution is validated locally on AMD Windows; hosted CI verifies both platforms' CPU fallback, not GPU hardware compatibility.
 
-The OpenJPEG source code is included as a git submodule pointing to the upstream repository at [https://github.com/uclouvain/openjpeg](https://github.com/uclouvain/openjpeg).
+Release builds retain precise floating-point behavior. Windows also uses link-time optimization. Development experiments and reference capture are excluded from the shipping library. Codec command-line tools are built for the CI roundtrip checks but are not packaged.
 
-## Usage
+Each archive contains `SOURCE_REVISION.txt`, public headers, and the OpenJPEG BSD and bundled Khronos headers Apache-2.0 licenses. The Build workflow produces downloadable autobuild archives for Windows and Linux, checking automatic selection and missing-device fallback against native CPU lossless output.
 
-This package is consumed by Second Life's build system through autobuild. The built artifacts include:
+## Build
 
-- Static/dynamic libraries (`libopenjp2` with platform-specific extensions)
-- Header files for JPEG 2000 codec functionality
-- License and copyright information
+Clone with submodules, install autobuild 3.9.3, and point `AUTOBUILD_VARIABLES_FILE` at a Second Life build-variables checkout. Then run:
 
-To use this package in an autobuild-based project:
-
-```bash
-autobuild install openjpeg
+```sh
+autobuild build -A 64 -c Release --no-configure --id BUILD_ID
+autobuild package -A 64 --archive-format tzst --archive-name ARCHIVE_NAME
 ```
 
-## Building Locally
-
-To build this package locally:
-
-1. Ensure you have autobuild installed and configured
-2. Clone the repository with submodules:
-   ```bash
-   git clone --recursive https://github.com/secondlife/3p-openjpeg.git
-   ```
-3. Build the package:
-   ```bash
-   autobuild build
-   ```
-
-## License
-
-OpenJPEG is licensed under the BSD license. See `openjpeg/LICENSE` for full license text.
-
-## Contributing
-
-This repository follows the standard Second Life third-party package conventions:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test across all supported platforms
-5. Submit a pull request
-
-For issues related to the OpenJPEG library itself, please report them to the [upstream OpenJPEG repository](https://github.com/uclouvain/openjpeg).
+Consumers install normally through `autobuild.xml`; no local package override is required.

@@ -51,7 +51,11 @@ jobs:
             python verify_package.py openjpeg/build/bin
           fi
       - name: Package
-        run: autobuild package -A 64 --archive-format tzst --results-file autobuild-results.json
+        run: |
+          platform=linux64
+          if [[ "$RUNNER_OS" == Windows ]]; then platform=windows64; fi
+          version="$(cat stage/VERSION.txt)"
+          autobuild package -A 64 --archive-format tzst --archive-name "openjpeg-${version}-${platform}-${GITHUB_RUN_ID}" --results-file autobuild-results.json
       - uses: actions/upload-artifact@v7
         with:
           name: openjpeg-${{ runner.os }}-64
