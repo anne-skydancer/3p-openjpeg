@@ -1,2 +1,6 @@
 stage/
 autobuild-parabuild-bootstrap/
+.cuda-toolkit/
+*.tar.zst
+autobuild-results*.json
+__pycache__/
