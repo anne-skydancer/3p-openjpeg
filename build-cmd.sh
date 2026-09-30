@@ -23,7 +23,7 @@ if [ -z "$AUTOBUILD" ] ; then
 fi
 
 if [[ "$OSTYPE" == "cygwin" || "$OSTYPE" == "msys" ]] ; then
-    autobuild="$(cygpath -u $AUTOBUILD)"
+    autobuild="$(cygpath -u "$AUTOBUILD")"
 else
     autobuild="$AUTOBUILD"
 fi
@@ -41,6 +41,23 @@ source "$(dirname "$AUTOBUILD_VARIABLES_FILE")/functions"
 build=${AUTOBUILD_BUILD_ID:=0}
 echo "${OPENJPEG_VERSION}.${build}" > "${stage}/VERSION.txt"
 
+# Ship CUDA automatically in Windows/Linux x64 packages. This is a compiler
+# dependency only; the build host does not need an NVIDIA GPU or driver.
+cuda_options=()
+case "$AUTOBUILD_PLATFORM" in
+    windows*|linux*)
+        if [[ "$AUTOBUILD_ADDRSIZE" == 64 ]]; then
+            cuda_root="${OPJ_CUDA_ROOT:-${CUDA_PATH:-}}"
+            if [[ -z "$cuda_root" ]]; then
+                cuda_root="$(python tools/prepare_cuda.py --output .cuda-toolkit)"
+            fi
+            cuda_options=(-DOPJ_ENABLE_CUDA=ON "-DOPJ_CUDA_ROOT=$cuda_root" -DOPJ_BUILD_CUDA_EXPERIMENTS=OFF)
+        else
+            cuda_options=(-DOPJ_ENABLE_CUDA=OFF)
+        fi
+    ;;
+esac
+
 pushd "$OPENJPEG_SOURCE_DIR"
     case "$AUTOBUILD_PLATFORM" in
         windows*)
@@ -54,7 +71,7 @@ pushd "$OPENJPEG_SOURCE_DIR"
             cmake . -G "$AUTOBUILD_WIN_CMAKE_GEN" $LL_PLATFORM -DCMAKE_INSTALL_PREFIX=$stage \
                     -DCMAKE_C_FLAGS="$(remove_cxxstd $LL_BUILD_RELEASE) /O2 /Ob3 /Oi /Ot /Gy /Gw /fp:precise" \
                     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON \
-                    -DOPJ_ENABLE_OPENCL=ON -DOPJ_BUILD_OPENCL_EXPERIMENTS=OFF -DBUILD_CODEC=ON
+                    -DOPJ_ENABLE_OPENCL=ON -DOPJ_BUILD_OPENCL_EXPERIMENTS=OFF -DBUILD_CODEC=ON "${cuda_options[@]}"
 
             msbuild.exe \
                 -t:openjp2,opj_compress,opj_decompress \
@@ -138,7 +155,7 @@ pushd "$OPENJPEG_SOURCE_DIR"
                     -DCMAKE_INSTALL_PREFIX="$stage" \
                     -DCMAKE_INSTALL_LIBDIR="$stage/lib/release" \
                     -DBUILD_SHARED_LIBS=OFF \
-                    -DOPJ_ENABLE_OPENCL=ON -DOPJ_BUILD_OPENCL_EXPERIMENTS=OFF -DBUILD_CODEC=ON \
+                    -DOPJ_ENABLE_OPENCL=ON -DOPJ_BUILD_OPENCL_EXPERIMENTS=OFF -DBUILD_CODEC=ON "${cuda_options[@]}" \
                     -DCMAKE_C_FLAGS="$plainopts" \
                     -DCMAKE_CXX_FLAGS="$opts"
 
