@@ -41,22 +41,8 @@ source "$(dirname "$AUTOBUILD_VARIABLES_FILE")/functions"
 build=${AUTOBUILD_BUILD_ID:=0}
 echo "${OPENJPEG_VERSION}.${build}" > "${stage}/VERSION.txt"
 
-# Ship CUDA automatically in Windows/Linux x64 packages. This is a compiler
-# dependency only; the build host does not need an NVIDIA GPU or driver.
-cuda_options=()
-case "$AUTOBUILD_PLATFORM" in
-    windows*|linux*)
-        if [[ "$AUTOBUILD_ADDRSIZE" == 64 ]]; then
-            cuda_root="${OPJ_CUDA_ROOT:-${CUDA_PATH:-}}"
-            if [[ -z "$cuda_root" ]]; then
-                cuda_root="$(python tools/prepare_cuda.py --output .cuda-toolkit)"
-            fi
-            cuda_options=(-DOPJ_ENABLE_CUDA=ON "-DOPJ_CUDA_ROOT=$cuda_root" -DOPJ_BUILD_CUDA_EXPERIMENTS=OFF)
-        else
-            cuda_options=(-DOPJ_ENABLE_CUDA=OFF)
-        fi
-    ;;
-esac
+# Explicit CPU-only package policy; no GPU SDK or runtime backend.
+cpu_options=(-DOPJ_ENABLE_CUDA=OFF -DOPJ_ENABLE_OPENCL=OFF -DOPJ_PRECISE_FP=ON -DOPJ_BUILD_CUDA_EXPERIMENTS=OFF -DOPJ_BUILD_OPENCL_EXPERIMENTS=OFF)
 
 pushd "$OPENJPEG_SOURCE_DIR"
     case "$AUTOBUILD_PLATFORM" in
@@ -69,9 +55,9 @@ pushd "$OPENJPEG_SOURCE_DIR"
             fi
 
             cmake . -G "$AUTOBUILD_WIN_CMAKE_GEN" $LL_PLATFORM -DCMAKE_INSTALL_PREFIX=$stage \
-                    -DCMAKE_C_FLAGS="$(remove_cxxstd $LL_BUILD_RELEASE) /O2 /Ob3 /Oi /Ot /Gy /Gw /fp:precise" \
+                    -DCMAKE_C_FLAGS="$(remove_cxxstd $LL_BUILD_RELEASE) /O2 /Ob3 /Oi /Ot /Gy /Gw /fp:precise /arch:AVX2" \
                     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON \
-                    -DOPJ_ENABLE_OPENCL=ON -DOPJ_BUILD_OPENCL_EXPERIMENTS=OFF -DBUILD_CODEC=ON "${cuda_options[@]}"
+                    -DBUILD_CODEC=ON "${cpu_options[@]}"
 
             msbuild.exe \
                 -t:openjp2,opj_compress,opj_decompress \
@@ -117,7 +103,7 @@ pushd "$OPENJPEG_SOURCE_DIR"
                         -DCMAKE_INSTALL_PREFIX="$stage" \
                         -DCMAKE_INSTALL_LIBDIR="$stage/lib/release/$arch" \
                         -DCMAKE_OSX_ARCHITECTURES:STRING="$arch" \
-                        -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+                        -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} "${cpu_options[@]}"
 
                     cmake --build . --config Release
                     cmake --install . --config Release
@@ -138,7 +124,7 @@ pushd "$OPENJPEG_SOURCE_DIR"
 
         linux*)
             opts="${TARGET_OPTS:--m$AUTOBUILD_ADDRSIZE $LL_BUILD_RELEASE}"
-            plainopts="$(remove_cxxstd $opts)"
+            plainopts="$(remove_cxxstd $opts) -mavx2 -ffp-contract=off"
 
             # Handle any deliberate platform targeting
             if [ -z "${TARGET_CPPFLAGS:-}" ]; then
@@ -155,7 +141,7 @@ pushd "$OPENJPEG_SOURCE_DIR"
                     -DCMAKE_INSTALL_PREFIX="$stage" \
                     -DCMAKE_INSTALL_LIBDIR="$stage/lib/release" \
                     -DBUILD_SHARED_LIBS=OFF \
-                    -DOPJ_ENABLE_OPENCL=ON -DOPJ_BUILD_OPENCL_EXPERIMENTS=OFF -DBUILD_CODEC=ON "${cuda_options[@]}" \
+                    -DBUILD_CODEC=ON "${cpu_options[@]}" \
                     -DCMAKE_C_FLAGS="$plainopts" \
                     -DCMAKE_CXX_FLAGS="$opts"
 
@@ -174,6 +160,8 @@ pushd "$OPENJPEG_SOURCE_DIR"
     esac
     mkdir -p "$stage/LICENSES"
     cp LICENSE "$stage/LICENSES/openjpeg.txt"
-    cp thirdparty/opencl/LICENSE "$stage/LICENSES/OpenCL-Headers.txt"
+    package_simd=avx2
+    if [[ "$AUTOBUILD_PLATFORM" == darwin* ]]; then package_simd=platform-default; fi
+    printf 'backend=cpu\nsimd=%s\nprecise_fp=on\n' "$package_simd" > "$stage/BUILD_POLICY.txt"
     git rev-parse HEAD > "$stage/SOURCE_REVISION.txt"
 popd

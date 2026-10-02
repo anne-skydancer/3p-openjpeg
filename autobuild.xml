@@ -42,7 +42,7 @@
           <key>manifest</key>
           <array>
             <string>LICENSES/openjpeg.txt</string>
-            <string>LICENSES/OpenCL-Headers.txt</string>
+            <string>BUILD_POLICY.txt</string>
             <string>SOURCE_REVISION.txt</string>
             <string>include/openjpeg/*.h</string>
           </array>
