@@ -8,10 +8,19 @@ import tempfile
 import argparse
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("bindir", type=Path)
-parser.add_argument("--require-cuda", action="store_true", help="Require automatic CUDA selection on a local NVIDIA GPU")
 args = parser.parse_args()
 bindir = args.bindir.resolve()
 ext = '.exe' if os.name == 'nt' else ''
+cache_path = bindir.parent.parent / 'CMakeCache.txt' if os.name == 'nt' else bindir.parent / 'CMakeCache.txt'
+cache = {}
+for line in cache_path.read_text().splitlines():
+    if line and not line.startswith(('#', '//')) and '=' in line:
+        key, value = line.split('=', 1)
+        cache[key.split(':', 1)[0]] = value
+for backend in ('OPJ_ENABLE_CUDA', 'OPJ_ENABLE_OPENCL'):
+    assert cache[backend] == 'OFF', backend + ' was not disabled'
+assert cache['OPJ_PRECISE_FP'] == 'ON', 'Precise arithmetic was not enabled'
+assert ('/arch:AVX2' if os.name == 'nt' else '-mavx2') in cache['CMAKE_C_FLAGS'], 'AVX2 missing from library flags'
 base_env = {k: v for k, v in os.environ.items() if not k.startswith(('OPJ_OPENCL_', 'OPJ_CUDA_', 'OPJ_DECODE_'))}
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
@@ -34,11 +43,8 @@ with tempfile.TemporaryDirectory() as tmp:
         result = subprocess.run([str(bindir / ('opj_decompress' + ext)), '-i', str(encoded), '-o', str(decoded)], env=env, check=True, capture_output=True, text=True)
         log = result.stdout + result.stderr
         print(log)
-        if mode == 'auto' and args.require_cuda:
-            assert 'CUDA decoded tile' in log, 'Automatic CUDA execution was not observed'
-        if mode in ('off', 'missing', 'cuda-missing'):
-            assert 'CUDA decoded tile' not in log and 'OpenCL decoded tile' not in log, 'Fallback unexpectedly used a GPU'
+        assert 'CUDA decoded tile' not in log and 'OpenCL decoded tile' not in log, 'CPU-only package unexpectedly used a GPU'
         assert decoded.read_bytes().endswith(pixels), mode + ': lossless pixel mismatch'
         results.append(encoded.read_bytes())
     assert all(result == results[0] for result in results), 'automatic/fallback encoding differs from CPU'
-print('PASS: automatic selection and missing-device fallback match native CPU; lossless pixels exact')
+print('PASS: every backend selector remains CPU-only; lossless pixels exact')

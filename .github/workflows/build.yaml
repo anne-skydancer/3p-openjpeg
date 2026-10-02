@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main, "codex/cuda-openjpeg"]
+    branches: [main, "codex/cpu-avx2-openjpeg"]
 permissions:
   contents: read
 jobs:
@@ -41,13 +41,9 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y ninja-build libpng-dev libtiff-dev libwebp-dev
           fi
-      - name: Prepare CUDA compiler SDK
-        run: |
-          cuda_root="$(python tools/prepare_cuda.py --output .cuda-toolkit)"
-          echo "OPJ_CUDA_ROOT=$cuda_root" >> "$GITHUB_ENV"
       - name: Build
         run: autobuild build -A 64 -c Release --no-configure --id "$GITHUB_RUN_ID"
-      - name: Verify automatic CPU fallback and codec roundtrip
+      - name: Verify CPU-only backend and codec roundtrip
         run: |
           if [[ "$RUNNER_OS" == Windows ]]; then
             python verify_package.py openjpeg/bin/Release
