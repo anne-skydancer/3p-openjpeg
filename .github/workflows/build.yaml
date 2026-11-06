@@ -52,7 +52,12 @@ jobs:
           fi
       - name: Report glibc requirement (Linux, report only)
         if: runner.os == 'Linux'
-        run: python .github/scripts/glibc_report.py stage
+        run: python .github/scripts/glibc_report.py --json glibc.json stage
+      - name: Write build-info file
+        run: |
+          FLAVOUR=linux64
+          if [[ "$RUNNER_OS" == Windows ]]; then FLAVOUR=windows64; fi
+          python .github/scripts/buildinfo.py --name openjpeg --flavour "$FLAVOUR"             --upstream-version 2.5.4 --upstream-source https://github.com/anne-skydancer/openjpeg.git             --upstream-hash "$(cat stage/SOURCE_REVISION.txt)"             --build-type "Release, CPU-only AVX2 (Linux static libopenjp2.a, Windows DLL + import library)"             --glibc-json glibc.json             --option OPJ_ENABLE_CUDA=OFF --option OPJ_ENABLE_OPENCL=OFF --option OPJ_PRECISE_FP=ON             --option BUILD_CODEC=ON --option "AVX2=-mavx2 -ffp-contract=off (Linux), /arch:AVX2 (Windows)"
       - name: Package
         run: |
           platform=linux64
@@ -62,6 +67,56 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: openjpeg-${{ runner.os }}-64
+          path: |
+            *.tar.zst
+            autobuild-results.json
+            stage/SOURCE_REVISION.txt
+  build-lts:
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash
+    env:
+      AUTOBUILD: autobuild
+      AUTOBUILD_ADDRSIZE: '64'
+      AUTOBUILD_BUILD_ID: ${{ github.run_id }}
+      AUTOBUILD_VARIABLES_FILE: ${{ github.workspace }}/.build-variables/variables
+      MSYS2_ARG_CONV_EXCL: '*'
+      FLAVOUR: linux64-lts
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends             ca-certificates git build-essential cmake ninja-build binutils python3 python3-venv             libpng-dev libtiff-dev libwebp-dev
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v7
+        with:
+          repository: secondlife/build-variables
+          path: .build-variables
+      - name: Install packaging tools
+        run: |
+          python3 -m venv /opt/ab
+          /opt/ab/bin/pip install autobuild==3.9.3
+          echo /opt/ab/bin >> "$GITHUB_PATH"
+      - name: Build
+        run: autobuild build -A 64 -c Release --no-configure --id "$GITHUB_RUN_ID"
+      - name: Verify CPU-only backend and codec roundtrip
+        run: python verify_package.py openjpeg/build/bin
+      - name: Check glibc requirement (fails above 2.39)
+        run: python .github/scripts/glibc_report.py --max 2.39 --json glibc.json stage
+      - name: Write build-info file
+        run: |
+          python .github/scripts/buildinfo.py --name openjpeg --flavour "$FLAVOUR"             --upstream-version 2.5.4 --upstream-source https://github.com/anne-skydancer/openjpeg.git             --upstream-hash "$(cat stage/SOURCE_REVISION.txt)"             --build-type "Release, CPU-only AVX2 (Linux static libopenjp2.a, Windows DLL + import library)"             --glibc-json glibc.json             --option OPJ_ENABLE_CUDA=OFF --option OPJ_ENABLE_OPENCL=OFF --option OPJ_PRECISE_FP=ON             --option BUILD_CODEC=ON --option "AVX2=-mavx2 -ffp-contract=off (Linux), /arch:AVX2 (Windows)"
+      - name: Package
+        run: |
+          version="$(cat stage/VERSION.txt)"
+          autobuild package -A 64 --archive-format tzst --archive-name "openjpeg-${version}-linux64-lts-${GITHUB_RUN_ID}" --results-file autobuild-results.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openjpeg-Linux-LTS-64
           path: |
             *.tar.zst
             autobuild-results.json
