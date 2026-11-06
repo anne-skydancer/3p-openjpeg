@@ -50,6 +50,9 @@ jobs:
           else
             python verify_package.py openjpeg/build/bin
           fi
+      - name: Report glibc requirement (Linux, report only)
+        if: runner.os == 'Linux'
+        run: python .github/scripts/glibc_report.py stage
       - name: Package
         run: |
           platform=linux64
